@@ -5,35 +5,7 @@ import (
 	"errors"
 	"strings"
 	"time"
-
-	"golang.org/x/crypto/bcrypt"
 )
-
-func validateAndNormalizeName(name string) (string, error) {
-	normalized := strings.TrimSpace(name)
-	if normalized == "" {
-		return "", ErrInvalidName
-	}
-	if len(normalized) < MinNameLength || len(normalized) > MaxNameLength {
-		return "", ErrInvalidName
-	}
-	return normalized, nil
-}
-
-func validateAndNormalizeEmail(email string) (string, error) {
-	normalized := strings.ToLower(strings.TrimSpace(email))
-	if normalized == "" || len(normalized) > MaxEmailLength {
-		return "", ErrInvalidEmail
-	}
-	return normalized, nil
-}
-
-func validatePasswordLength(plain string) error {
-	if len(plain) < MinPasswordLength || len(plain) > MaxPasswordLength {
-		return ErrInvalidPasswordLength
-	}
-	return nil
-}
 
 const (
 	MinNameLength     = 3
@@ -68,77 +40,83 @@ type User struct {
 	name      string
 	email     string
 	password  string
-	createdAt time.Time
+	createdAt *time.Time
 	updatedAt *time.Time
 	deletedAt *time.Time
 }
 
 func NewUser(name, email, plainPassword string) (*User, error) {
-	normalizedName, err := validateAndNormalizeName(name)
-	if err != nil {
-		return nil, err
-	}
-
-	normalizedEmail, err := validateAndNormalizeEmail(email)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := validatePasswordLength(plainPassword); err != nil {
-		return nil, err
-	}
-
-	hashedPassword, err := bcrypt.GenerateFromPassword(
-		[]byte(plainPassword), bcrypt.DefaultCost,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &User{
-		name:     normalizedName,
-		email:    normalizedEmail,
-		password: string(hashedPassword),
-	}, nil
+	return &User{name: name, email: email, password: plainPassword}, nil
 }
 
-func (u *User) CheckPassword(plainPassword string) error {
-	err := bcrypt.CompareHashAndPassword(
-		[]byte(u.password), []byte(plainPassword),
-	)
-	if err != nil {
-		return err
+func (u *User) ValidateName() error {
+	if u.name == "" {
+		return ErrInvalidName
 	}
+
+	if len(u.name) < MinNameLength {
+		return ErrInvalidName
+	}
+
+	if len(u.name) > MaxNameLength {
+		return ErrInvalidName
+	}
+
+	u.name = strings.TrimSpace(u.name)
 	return nil
 }
 
-func (u *User) ChangePassword(oldPlain, newPlain string) error {
+func (u *User) ValidateEmail() error {
+	if u.email == "" {
+		return ErrInvalidEmail
+	}
+
+	if len(u.email) > MaxEmailLength {
+		return ErrInvalidEmail
+	}
+
+	normalizedEmail := strings.ToLower(
+		strings.TrimSpace(u.email),
+	)
+	u.email = normalizedEmail
+
+	return nil
+}
+
+func (u *User) ValidatePassword() error {
+	if u.password == "" {
+		return ErrInvalidPasswordLength
+	}
+
+	if len(u.password) < MinPasswordLength {
+		return ErrInvalidPasswordLength
+	}
+
+	if len(u.password) > MaxPasswordLength {
+		return ErrInvalidPasswordLength
+	}
+
+	return nil
+}
+
+func (u *User) SetCreatedAt() {
+	now := time.Now().UTC()
+	u.createdAt = &now
+}
+
+func (u *User) SetUpdatedAt() {
+	now := time.Now().UTC()
+	u.createdAt = &now
+}
+
+func (u *User) SetDeletedAt() {
+	now := time.Now().UTC()
+	u.deletedAt = &now
+}
+
+func (u *User) IsDeleted() error {
 	if u.deletedAt != nil {
 		return ErrUserAlreadyDeleted
 	}
-
-	if err := u.CheckPassword(oldPlain); err != nil {
-		return ErrPasswordMismatch
-	}
-
-	if err := validatePasswordLength(newPlain); err != nil {
-		return err
-	}
-
-	if err := u.CheckPassword(newPlain); err == nil {
-		return ErrSamePassword
-	}
-
-	hashedPassword, err := bcrypt.GenerateFromPassword(
-		[]byte(newPlain), bcrypt.DefaultCost,
-	)
-	if err != nil {
-		return err
-	}
-
-	u.password = string(hashedPassword)
-	now := time.Now().UTC()
-	u.updatedAt = &now
-
 	return nil
 }
