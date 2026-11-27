@@ -12,12 +12,9 @@ import (
 func validateAndNormalizeName(name string) (string, error) {
 	normalized := strings.TrimSpace(name)
 	if normalized == "" {
-		return "", ErrInvalidEmail
-	}
-	if len(normalized) < MinNameLength {
 		return "", ErrInvalidName
 	}
-	if len(normalized) > MaxNameLength {
+	if len(normalized) < MinNameLength || len(normalized) > MaxNameLength {
 		return "", ErrInvalidName
 	}
 	return normalized, nil
@@ -25,20 +22,14 @@ func validateAndNormalizeName(name string) (string, error) {
 
 func validateAndNormalizeEmail(email string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(email))
-	if normalized == "" {
+	if normalized == "" || len(normalized) > MaxEmailLength {
 		return "", ErrInvalidEmail
-	}
-	if len(normalized) > MaxEmailLength {
-		return "", ErrInvalidName
 	}
 	return normalized, nil
 }
 
 func validatePasswordLength(plain string) error {
-	if len(plain) < MinPasswordLength {
-		return ErrInvalidPasswordLength
-	}
-	if len(plain) < MaxPasswordLength {
+	if len(plain) < MinPasswordLength || len(plain) > MaxPasswordLength {
 		return ErrInvalidPasswordLength
 	}
 	return nil
@@ -111,78 +102,43 @@ func NewUser(name, email, plainPassword string) (*User, error) {
 	}, nil
 }
 
-func (u *User) ID() uint64 { return (*u).id }
-
-func (u *User) Name() string { return (*u).name }
-
-func (u *User) Email() string { return (*u).email }
-
-func (u *User) Password() string { return (*u).password }
-
-func (u *User) CreatedAt() time.Time { return (*u).createdAt }
-
-func (u *User) UpdatedAt() *time.Time { return (*u).updatedAt }
-
-func (u *User) DeletedAt() *time.Time { return (*u).deletedAt }
-
-func (u *User) SetID(id uint64) { (*u).id = id }
-
-func (u *User) SetName(nornalizedName string) { (*u).name = nornalizedName }
-
-func (u *User) SetEmail(normalizedEmail string) { (*u).email = normalizedEmail }
-
-func (u *User) SetPassword(hashedPassword string) { (*u).password = hashedPassword }
-
-func (u *User) SetUpdated(t *time.Time) { (*u).updatedAt = t }
-
-func (u *User) SetDeleted(t *time.Time) { (*u).deletedAt = t }
-
-func (u *User) IsDeleted() bool {
-	return (*u).DeletedAt() != nil
-}
-
-func (u *User) VerifyPassword(plainPassword string) error {
-	if (*u).IsDeleted() {
-		return ErrUserAlreadyDeleted
-	}
-
+func (u *User) CheckPassword(plainPassword string) error {
 	err := bcrypt.CompareHashAndPassword(
-		[]byte((*u).Password()), []byte(plainPassword),
+		[]byte(u.password), []byte(plainPassword),
 	)
 	if err != nil {
-		return ErrInvalidCredentials
+		return err
 	}
-
 	return nil
 }
 
 func (u *User) ChangePassword(oldPlain, newPlain string) error {
-	// if (*u).IsDeleted() {
-	// 	return ErrUserAlreadyDeleted
-	// }
+	if u.deletedAt != nil {
+		return ErrUserAlreadyDeleted
+	}
+
+	if err := u.CheckPassword(oldPlain); err != nil {
+		return ErrPasswordMismatch
+	}
 
 	if err := validatePasswordLength(newPlain); err != nil {
 		return err
 	}
 
-	if err := u.VerifyPassword(oldPlain); err != nil {
-		return ErrPasswordMismatch
-	}
-
-	if err := u.VerifyPassword(newPlain); err == nil {
+	if err := u.CheckPassword(newPlain); err == nil {
 		return ErrSamePassword
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword(
-		[]byte(oldPlain), bcrypt.DefaultCost,
+		[]byte(newPlain), bcrypt.DefaultCost,
 	)
 	if err != nil {
 		return err
 	}
 
-	(*u).SetPassword(string(hashedPassword))
+	u.password = string(hashedPassword)
 	now := time.Now().UTC()
-	(*u).SetUpdated(&now)
+	u.updatedAt = &now
 
 	return nil
 }
